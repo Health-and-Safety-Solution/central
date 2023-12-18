@@ -1,6 +1,8 @@
 [submodule "server"]
 	path = server
 	url = https://github.com/Health-and-Safety-Solution/central-backend.git
+	branch = acorn
 [submodule "client"]
 	path = client
 	url = https://github.com/Health-and-Safety-Solution/central-frontend.git
+	branch = acorn
