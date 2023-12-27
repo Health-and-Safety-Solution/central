@@ -1,0 +1,250 @@
+A. Create Reverse Proxy:
+
+1. Create Ubuntu 22.04 Server without Public IP. Assign Elastic IP to the new Server
+
+2. Create DNS A entry for the abve IP address
+
+3. install nginx in proxy server and add entry for domain name to be used. 
+
+sudo apt-get install nginx
+sudo nano /etc/nginx/sites-available/<domain name>
+cd /etc/nginx/sites-enabled
+sudo ln -s /etc/nginx/sites-available/<domain name> .
+
+4. Add letsencrypt SSL
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx
+
+5. Update Reverse proxy entry in nginx config
+sudo nano /etc/nginx/sites-available/<domain name>
+
+location / {
+                # First attempt to serve request as file, then
+                # as directory, then fall back to displaying a 404.
+                # try_files $uri $uri/ =404;
+                proxy_set_header X-Forwarded-Host $host:$server_port;
+                proxy_set_header X-Forwarded-Server $host;
+                proxy_pass http://172.31.18.32;
+                include proxy_params;
+        }
+
+
+B. Follow document for central Server: https://docs.getodk.org/central-install-digital-ocean/
+
+1. Create Ubuntu 22.04 Server without Public IP. Assign Elastic IP to the new Server
+
+2. Upgrade to latest system softwares
+
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get dist-upgrade
+
+3. Install Docker compose - https://docs.docker.com/engine/install/ubuntu/ and https://docs.docker.com/compose/install/linux/#install-using-the-repository
+
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove $pkg; done
+
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo apt-get update
+sudo apt-get install docker-compose-plugin
+
+4. Deactivate ufw firewall
+
+sudo ufw disable
+sudo service ufw stop
+sudo service ufw status
+
+5. Add SWAP: https://dev.to/hardiksondagar/how-to-use-aws-ebs-volume-as-a-swap-memory-5d15
+
+sudo mkswap /dev/xvdg
+sudo swapon /dev/xvdg
+sudo sysctl -w vm.swappiness=10
+
+6. Edit /etc/sysctl.conf and add "vm.swappiness=10" to the end of the file to ensure that change is permanently available.
+
+sudo nano /etc/sysctl.conf
+
+7. Edit /etc/fstab and add "/dev/xvdg none swap sw 0 0" to the end of the file to ensure that the swap file is permanently available.
+
+sudo nano /etc/fstab
+
+8. Mount EBS Volume for Docker Files
+
+sudo mkfs -t ext4 /dev/xvdf
+sudo mkdir /mnt/central
+sudo mount /dev/xvdf  /mnt/central
+sudo mkdir /mnt/central/docker
+
+9. Add "/dev/xvdf /mnt/central ext4 defaults,nofail 0 2" to the end of file /etc/fstab
+
+sudo nano /etc/fstab
+
+10. Move Docker to new volume - https://blog.adriel.co.nz/2018/01/25/change-docker-data-directory-in-debian-jessie/
+
+sudo nano /etc/docker/daemon.json and add following
+
+{
+  "data-root":"/mnt/central/docker",
+  "dns":["8.8.8.8"]
+}
+
+sudo systemctl stop docker
+sudo ps aux | grep -i docker | grep -v grep
+sudo rsync -axPS /var/lib/docker/ /mnt/central/docker
+sudo systemctl start docker
+sudo docker info | grep 'Docker Root Dir'
+sudo docker ps
+sudo rm -r /var/lib/docker
+
+
+11. Copy code from github
+
+cd /mnt/central
+sudo git clone https://github.com/Health-and-Safety-Solution/central.git
+cd /mnt/central/central
+sudo git submodule update -i
+sudo git submodule update --remote
+
+12. Create Postgresql DB on RDS
+
+13. Install postgre Client 
+
+sudo apt-get install postgresql-client
+
+14. Connect to DB
+
+sudo psql -h acorncentral.c1queakk4bqc.eu-west-2.rds.amazonaws.com -U postgres
+
+15. create new database:
+
+CREATE USER acorn_central WITH PASSWORD '<password>';
+GRANT acorn_central TO postgres;
+CREATE DATABASE acorn_central WITH OWNER=acorn_central ENCODING=UTF8;
+CREATE EXTENSION IF NOT EXISTS CITEXT;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+\c acorn_central
+CREATE EXTENSION IF NOT EXISTS CITEXT;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+16. Stop central server and take snapshot
+
+17. Change Central Server to Small and restart
+
+18. Copy Environment file
+cd /mnt/central/central
+sudo cp .env.template .env
+
+19. update .env file
+
+update domain to one used in setp 18
+update SSL to upstream
+SERVICE_NODE_OPTIONS='--max-old-space-size=2048'
+Update DB Details - https://forum.getodk.org/t/odk-central-with-custom-database-with-ssl/34435/16
+add DB_SSL=true
+Update Email Server Details
+
+=========================================================================
+# Use fully qualified domain names. Set to DOMAIN=local if SSL_TYPE=selfsign.
+DOMAIN=acornsafety-central.accellier.net
+
+# Used for Let's Encrypt expiration emails and Enketo technical support emails
+SYSADMIN_EMAIL=support@accellier.com
+
+# Options: letsencrypt, customssl, upstream, selfsign
+SSL_TYPE=upstream
+
+# Do not change if using SSL_TYPE=letsencrypt
+HTTP_PORT=80
+HTTPS_PORT=443
+
+# Optional: configure Node
+SERVICE_NODE_OPTIONS='--max-old-space-size=2048'
+
+# Optional: connect to a custom database server
+DB_HOST=acorncentral.c1queakk4bqc.eu-west-2.rds.amazonaws.com
+DB_USER=postgres
+DB_PASSWORD=XXX
+DB_NAME=acorn_central
+DB_SSL=true
+
+# Optional: configure a custom mail server
+EMAIL_FROM=support@accellier.com
+EMAIL_HOST=email-smtp.eu-west-2.amazonaws.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_IGNORE_TLS=false
+EMAIL_USER=YYY
+EMAIL_PASSWORD=XXX
+
+# Optional: configure Single Sign-on with OpenID Connect
+# OIDC_ENABLED=
+# OIDC_ISSUER_URL=
+# OIDC_CLIENT_ID=
+# OIDC_CLIENT_SECRET=
+
+# Optional: configure error reporting
+# SENTRY_ORG_SUBDOMAIN=
+# SENTRY_KEY=
+# SENTRY_PROJECT=
+=========================================================================
+
+
+20. add DNS to /etc/docker/daemon.json - https://forum.getodk.org/t/could-not-connect-with-form-server-preview/35789
+
+nano /etc/docker/daemon.json
+
+{
+  "data-root":"/mnt/central/docker",
+  "dns":["8.8.8.8"]
+}
+
+21. Clean Docker cache & Images if any - https://depot.dev/blog/docker-clear-cache
+
+cd /mnt/central/central
+sudo docker system df
+sudo docker system prune -a -f
+sudo docker volume prune -a -f
+
+22. Add "18.135.202.248 acornsafety-central.accellier.net" in /etc/hosts to ensure domain name resolution
+
+23. Docker Build
+touch ./files/allow-postgres14-upgrade
+sudo docker compose build
+sudo docker compose up -d
+sudo docker compose ps
+
+24. Open Domain name URL in the browser to check that Central is working
+
+25. Create new User and login in Central
+sudo docker compose exec service odk-cmd --email ashutosh.mundra@accellier.com user-create
+sudo docker compose exec service odk-cmd --email ashutosh.mundra@accellier.com user-promote
+
+26. Stop Docker Compose and stop the Central Server
+sudo docker compose down
+
+27. Restart Central server as micro instance
+
+28. Check that the Docker Services are running
+sudo service docker status
+
+29. Start the Central Docker
+
+cd /mnt/central/central
+sudo docker compose up -d
+sudo docker compose ps
+
+30. Open Domain name URL in the browser to check that Central is working
