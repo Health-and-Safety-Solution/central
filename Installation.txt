@@ -220,6 +220,7 @@ sudo docker system prune -a -f
 sudo docker volume prune -a -f
 
 22. Add "18.135.202.248 acornsafety-central.accellier.net" in /etc/hosts to ensure domain name resolution
+22b. (if required) Add extra_hosts line to your enketo container config in docker-compose.yml - https://forum.getodk.org/t/could-not-connect-with-form-server-preview/35789
 
 23. Docker Build
 touch ./files/allow-postgres14-upgrade
